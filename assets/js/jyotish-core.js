@@ -40,10 +40,26 @@
   var DASHA_YEARS = { Ketu: 7, Venus: 20, Sun: 6, Moon: 10, Mars: 7, Rahu: 18, Jupiter: 16, Saturn: 19, Mercury: 17 };
   // Daśā year lengths (days).
   var YEARS = { gregorian: 365.2425, sidereal: 365.256363 };
-  // Ayanāṃśa variants: offset in degrees from standard Lahiri.
-  // 'lahiri-deva' reproduces deva.guru's "Lahiri" (≈74″ lower), calibrated
-  // on a 1990 reference chart.
-  var AYANAMSAS = { lahiri: 0, 'lahiri-deva': -74 / 3600 };
+  // Ayanāṃśas. Fixed ones are mean values at J2000 (TT) taken from Swiss Ephemeris
+  // and carried with general precession; True Citrā follows the star Spica.
+  // All agree with Swiss Ephemeris to within 0.3″ over 1900–2100.
+  var AYANAMSAS = {
+    lahiri: { label: 'Lahiri', short: 'Lahiri', j2000: 23.857092325 },
+    'true-citra': { label: 'True Citrā Pakṣa (deva.guru default)', short: 'True Citrā', star: true },
+    raman: { label: 'Raman', short: 'Raman', j2000: 22.410791012 },
+    kp: { label: 'Krishnamurti (KP)', short: 'KP', j2000: 23.760240012 },
+    yukteshwar: { label: 'Yukteshwar', short: 'Yukteshwar', j2000: 22.478803 }
+  };
+  // Older saved charts: deva.guru's "Lahiri" is in fact True Citrā.
+  var AYANAMSA_ALIASES = { 'lahiri-deva': 'true-citra' };
+  function ayanamsaKey(key) {
+    key = AYANAMSA_ALIASES[key] || key;
+    return AYANAMSAS[key] ? key : 'lahiri';
+  }
+
+  // Spica (α Virginis), ICRS J2000 with proper motion in mas/yr (μα·cosδ, μδ).
+  var SPICA = { ra: (13 + 25 / 60 + 11.57937 / 3600) * 15, dec: -(11 + 9 / 60 + 40.7501 / 3600), pmRa: -42.35, pmDec: -30.67 };
+  var LIGHT_AU_PER_DAY = 173.1446327;
 
   var PLANETS = ['Sun', 'Moon', 'Mars', 'Mercury', 'Jupiter', 'Venus', 'Saturn', 'Rahu', 'Ketu'];
   var ABBR = { Asc: 'As', Sun: 'Su', Moon: 'Mo', Mars: 'Ma', Mercury: 'Me', Jupiter: 'Ju', Venus: 'Ve', Saturn: 'Sa', Rahu: 'Ra', Ketu: 'Ke' };
@@ -113,13 +129,38 @@
 
   // ---------- astronomy ----------
 
-  // Lahiri (Chitrapaksha) mean ayanamsa, anchored as in Swiss Ephemeris
-  // (23.245524743° at JD 2435553.5) and carried with IAU 1976 general precession.
+  // IAU 1976 general precession in longitude since J2000, in degrees.
+  function precessionSinceJ2000(time) {
+    var T = time.tt / 36525;
+    return (5029.0966 * T + 1.11113 * T * T - 0.000006 * T * T * T) / 3600;
+  }
+
+  // Lahiri (Chitrapaksha) mean ayanamsa, as in Swiss Ephemeris.
   function lahiriMean(jdTT) {
-    var T = (jdTT - 2451545.0) / 36525;
-    var T0 = (2435553.5 - 2451545.0) / 36525;
-    function pA(t) { return 5029.0966 * t + 1.11113 * t * t - 0.000006 * t * t * t; }
-    return 23.245524743 + (pA(T) - pA(T0)) / 3600;
+    return AYANAMSAS.lahiri.j2000 + precessionSinceJ2000({ tt: jdTT - 2451545.0 });
+  }
+
+  // True Citrā: Spica's apparent longitude (true ecliptic and equinox of date,
+  // with annual aberration, as Swiss Ephemeris does) minus 180°.
+  function spicaAyanamsaTrue(time) {
+    var yrs = time.tt / 365.25;
+    var dec = (SPICA.dec + SPICA.pmDec * yrs / 3.6e6) * DEG;
+    var ra = (SPICA.ra + SPICA.pmRa * yrs / 3.6e6 / Math.cos(SPICA.dec * DEG)) * DEG;
+    var ev = A.HelioState(A.Body.Earth, time);
+    var v = new A.Vector(
+      Math.cos(dec) * Math.cos(ra) + ev.vx / LIGHT_AU_PER_DAY,
+      Math.cos(dec) * Math.sin(ra) + ev.vy / LIGHT_AU_PER_DAY,
+      Math.sin(dec) + ev.vz / LIGHT_AU_PER_DAY, time);
+    var e = A.RotateVector(A.Rotation_EQJ_ECT(time), v);
+    return norm360(Math.atan2(e.y, e.x) / DEG - 180);
+  }
+
+  // Ayanāṃśa measured from the true equinox of date (the one tropical
+  // positions use), in degrees. The mean value is this minus Δψ.
+  function ayanamsaTrue(key, time, et) {
+    var a = AYANAMSAS[ayanamsaKey(key)];
+    if (a.star) return spicaAyanamsaTrue(time);
+    return a.j2000 + precessionSinceJ2000(time) + et.dpsi / 3600;
   }
 
   function tropicalLon(body, time) {
@@ -177,14 +218,15 @@
   }
 
   // All sidereal positions for a UTC instant.
-  function positions(utcMs, lat, lon, ayanamsaKey) {
+  function positions(utcMs, lat, lon, key) {
     var time = A.MakeTime(new Date(utcMs));
     var et = A.e_tilt(time);
-    var ayanamsa = lahiriMean(time.tt + 2451545.0) + et.dpsi / 3600 + (AYANAMSAS[ayanamsaKey] || 0);
-    var res = { ayanamsa: ayanamsa, ayanamsaText: dms(ayanamsa), planets: {} };
-    // deva.guru refers planets and lagna to the mean equinox (no nutation in
-    // longitude); nodes are mean anyway. Removing Δψ once more reproduces it.
-    var pAyan = ayanamsaKey === 'lahiri-deva' ? ayanamsa + et.dpsi / 3600 : ayanamsa;
+    // Planets and lagna are apparent (true equinox), so they take the true
+    // ayanāṃśa; the mean node takes the mean one. The mean value is the one
+    // shown, as in Swiss Ephemeris and deva.guru.
+    var pAyan = ayanamsaTrue(key, time, et);
+    var ayanamsa = pAyan - et.dpsi / 3600;
+    var res = { ayanamsa: ayanamsa, ayanamsaText: dms(ayanamsa), ayanamsaKey: ayanamsaKey(key), planets: {} };
 
     ['Sun', 'Moon', 'Mars', 'Mercury', 'Jupiter', 'Venus', 'Saturn'].forEach(function (b) {
       var l = tropicalLon(b, time);
@@ -387,7 +429,7 @@
     DASHA_LORDS: DASHA_LORDS, AYANAMSAS: AYANAMSAS, YEARS: YEARS, DASHA_YEARS: DASHA_YEARS, PLANETS: PLANETS, ABBR: ABBR,
     norm360: norm360, dms: dms,
     tzOffsetMinutes: tzOffsetMinutes, zonedToUtc: zonedToUtc, formatInZone: formatInZone,
-    lahiriMean: lahiriMean, positions: positions, ascendant: ascendant,
+    lahiriMean: lahiriMean, ayanamsaKey: ayanamsaKey, positions: positions, ascendant: ascendant,
     vimshottari: vimshottari, currentDasha: currentDasha,
     panchang: panchang, chart: chart, bySign: bySign
   };

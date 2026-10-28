@@ -200,10 +200,10 @@
       lon: h('input', { type: 'number', step: 'any', value: st.place.lon }),
       tz: h('select', {}, allZones().map(function (z) { return h('option', { value: z, text: z }); })),
       notes: h('textarea', { rows: 6, placeholder: 'Consultation notes…' }),
-      ayanamsa: h('select', {}, [h('option', { value: 'lahiri', text: 'Lahiri (Swiss Ephemeris)' }), h('option', { value: 'lahiri-deva', text: 'Lahiri as deva.guru' })]),
+      ayanamsa: h('select', {}, Object.keys(J.AYANAMSAS).map(function (k) { return h('option', { value: k, text: J.AYANAMSAS[k].label }); })),
       dashaYear: h('select', {}, [h('option', { value: 'gregorian', text: '365.2425 days' }), h('option', { value: 'sidereal', text: '365.2564 days (sidereal, deva.guru)' })])
     };
-    this.f.ayanamsa.value = localStorage.getItem('msj-ayanamsa') || CFG.ayanamsa || 'lahiri';
+    this.f.ayanamsa.value = J.ayanamsaKey(localStorage.getItem('msj-ayanamsa') || CFG.ayanamsa);
     this.f.dashaYear.value = localStorage.getItem('msj-dasha-year') || CFG.dashaYear || 'gregorian';
     [['ayanamsa', 'msj-ayanamsa'], ['dashaYear', 'msj-dasha-year']].forEach(function (k) {
       self.f[k[0]].addEventListener('change', function () { localStorage.setItem(k[1], self.f[k[0]].value); self.calculate(); });
@@ -408,7 +408,7 @@
     this.title.appendChild(h('h2', { text: inp.name || 'Untitled chart' }));
     this.title.appendChild(h('p', {
       text: fmtDate(c.utcMs, inp.tz) + ' · ' + pad(inp.hour) + ':' + pad(inp.minute) + ' (' + inp.tz + ') · ' +
-        (inp.place || (inp.lat.toFixed(2) + ', ' + inp.lon.toFixed(2))) + ' · ' + (inp.ayanamsa === 'lahiri-deva' ? 'Lahiri (deva.guru) ' : 'Lahiri ') + c.ayanamsaText
+        (inp.place || (inp.lat.toFixed(2) + ', ' + inp.lon.toFixed(2))) + ' · ' + J.AYANAMSAS[J.ayanamsaKey(inp.ayanamsa)].short + ' ' + c.ayanamsaText
     }));
     this.body.innerHTML = '';
     var r = { chart: this.renderChart, dasha: this.renderDasha, panchang: this.renderPanchang, reading: this.renderReading }[this.state.tab];
