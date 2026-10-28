@@ -45,7 +45,7 @@
   // All agree with Swiss Ephemeris to within 0.3″ over 1900–2100.
   var AYANAMSAS = {
     lahiri: { label: 'Lahiri', short: 'Lahiri', j2000: 23.857092325 },
-    'true-citra': { label: 'True Citrā Pakṣa (deva.guru default)', short: 'True Citrā', star: true },
+    'true-citra': { label: 'True Citrā Pakṣa', short: 'True Citrā', star: true },
     raman: { label: 'Raman', short: 'Raman', j2000: 22.410791012 },
     kp: { label: 'Krishnamurti (KP)', short: 'KP', j2000: 23.760240012 },
     yukteshwar: { label: 'Yukteshwar', short: 'Yukteshwar', j2000: 22.478803 }
